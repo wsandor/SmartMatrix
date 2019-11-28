@@ -44,6 +44,7 @@ extern const bitmap_font apple6x10;
 extern const bitmap_font apple8x13;
 extern const bitmap_font gohufont6x11;
 extern const bitmap_font gohufont6x11b;
+extern const bitmap_font vs12x16;
 
 typedef enum fontChoices {
     font3x5,
@@ -51,12 +52,14 @@ typedef enum fontChoices {
     font6x10,
     font8x13,
     gohufont11,
-    gohufont11b
+    gohufont11b,
+	fontvs12x16
 } fontChoices;
 
 bool getBitmapFontPixelAtXY(unsigned char letter, unsigned char x, unsigned char y, const bitmap_font *font);
 const bitmap_font *fontLookup(fontChoices font);
-uint16_t getBitmapFontRowAtXY(unsigned char letter, unsigned char y, const bitmap_font *font);
+uint8_t getBitmapFontRowAtXY(unsigned char letter, unsigned char x, unsigned char y, const bitmap_font *font);
+int getBitmapFontCharWidth(unsigned char letter, const bitmap_font *font);
 
 /// @{ defines to have human readable font files
 #define ________ 0x00

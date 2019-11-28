@@ -27,30 +27,31 @@
 #define INLINE __attribute__( ( always_inline ) ) inline
 
 #if defined(KINETISL)
-    #define ROW_CALCULATION_ISR_PRIORITY   192   // Cortex-M0 Acceptable values: 0,64,128,192
+    #define ROW_CALCULATION_ISR_PRIORITY   192//192   // Cortex-M0 Acceptable values: 0,64,128,192
 #elif defined(KINETISK)
-    #define ROW_CALCULATION_ISR_PRIORITY   240 // M4 acceptable values: 0,16,32,48,64,80,96,112,128,144,160,176,192,208,224,240
+    #define ROW_CALCULATION_ISR_PRIORITY   240//240 // M4 acceptable values: 0,16,32,48,64,80,96,112,128,144,160,176,192,208,224,240
 #endif
 
 // hardware-specific definitions
 // prescale of 1 is F_BUS/2
-#define LATCH_TIMER_PRESCALE  0x01
+#define LATCH_TIMER_PRESCALE  0x02   //1
 #define NS_TO_TICKS(X)      (uint32_t)(TIMER_FREQUENCY * ((X) / 1000000000.0))
 
 #if defined(KINETISL)
-    #define TIMER_FREQUENCY     (F_BUS/1)
+    #define TIMER_FREQUENCY     (F_BUS/(1 << (LATCH_TIMER_PRESCALE - 1)))
 #elif defined(KINETISK)
-    #define TIMER_FREQUENCY     (F_BUS/2)
+    #define TIMER_FREQUENCY     (F_BUS/(1 << LATCH_TIMER_PRESCALE))  //2
 #endif
 
 #define LATCH_TIMER_PULSE_WIDTH_TICKS   NS_TO_TICKS(LATCH_TIMER_PULSE_WIDTH_NS)
 #define TICKS_PER_ROW   (TIMER_FREQUENCY/refreshRate/MATRIX_SCAN_MOD)
-#define IDEAL_MSB_BLOCK_TICKS     (TICKS_PER_ROW/2)
+#define IDEAL_MSB_BLOCK_TICKS  (TICKS_PER_ROW * (1 << (LATCHES_PER_ROW - 1))) / ((1 << LATCHES_PER_ROW) - 1)   //(TICKS_PER_ROW/2)
 #define MIN_BLOCK_PERIOD_NS (LATCH_TO_CLK_DELAY_NS + ((PANEL_32_PIXELDATA_TRANSFER_MAXIMUM_NS*PIXELS_PER_LATCH)/32))
 #define MIN_BLOCK_PERIOD_TICKS NS_TO_TICKS(MIN_BLOCK_PERIOD_NS)
 
 // slower refresh rates require larger timer values - get the min refresh rate from the largest MSB value that will fit in the timer (round up)
-#define MIN_REFRESH_RATE    (((TIMER_FREQUENCY/65535)/MATRIX_SCAN_MOD/2) + 1)
+#define MIN_REFRESH_RATE    (((TIMER_FREQUENCY/65535)/MATRIX_SCAN_MOD/*/2*/) + 1)
+
 
 #define TIMER_REGISTERS_TO_UPDATE   2
 
@@ -194,8 +195,8 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
     dmaUpdateAddress.TCD->SADDR = &(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[0].rowbits[0].addressValues);
 #endif
     dmaUpdateTimer.TCD->SADDR = &(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[currentRow].rowbits[0].timerValues.timer_oe);
-    dmaClockOutData.TCD->SADDR = (uint8_t*)&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[currentRow].rowbits[0].data;
-
+    //dmaClockOutData.TCD->SADDR = (uint8_t*)&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[currentRow].rowbits[0].data;
+	dmaClockOutData.TCD->SADDR = (uint8_t*)&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[currentRow].rowbits[0].timerValues.timer_oe;	
     // enable channel-to-channel linking so data will be shifted out
     dmaUpdateTimer.TCD->CSR &= ~(1 << 7);  // must clear DONE flag before enabling
     dmaUpdateTimer.TCD->CSR |= (1 << 5);
@@ -232,6 +233,26 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
     uint32_t ticksUsed;
     uint16_t msbBlockTicks = IDEAL_MSB_BLOCK_TICKS + MSB_BLOCK_TICKS_ADJUSTMENT_INCREMENT;
 
+	Serial.print("LATCHES_PER_ROW ");
+	Serial.println(LATCHES_PER_ROW);
+	Serial.print("TICKS_PER_ROW ");
+	Serial.println(TICKS_PER_ROW);
+	Serial.print("IDEAL_MSB_BLOCK_TICKS ");
+	Serial.println(IDEAL_MSB_BLOCK_TICKS);
+	Serial.print("MIN_BLOCK_PERIOD_NS ");
+	Serial.println(MIN_BLOCK_PERIOD_NS);
+	Serial.print("MIN_BLOCK_PERIOD_TICKS ");
+	Serial.println(MIN_BLOCK_PERIOD_TICKS);
+	Serial.print("PANEL_32_PIXELDATA_TRANSFER_MAXIMUM_NS ");
+	Serial.println(PANEL_32_PIXELDATA_TRANSFER_MAXIMUM_NS);
+	Serial.print("refreshRate ");
+	Serial.println(refreshRate); 
+	
+	// TICKS_PER_ROW   (TIMER_FREQUENCY/refreshRate/MATRIX_SCAN_MOD)
+    // IDEAL_MSB_BLOCK_TICKS     (TICKS_PER_ROW/2)
+	// MIN_BLOCK_PERIOD_NS (LATCH_TO_CLK_DELAY_NS + ((PANEL_32_PIXELDATA_TRANSFER_MAXIMUM_NS*PIXELS_PER_LATCH)/32))
+	// MIN_BLOCK_PERIOD_TICKS NS_TO_TICKS(MIN_BLOCK_PERIOD_NS)
+	
     // start with ideal width of the MSB, and keep lowering until the width of all bits fits within TICKS_PER_ROW
     do {
         ticksUsed = 0;
@@ -245,7 +266,7 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
             ticksUsed += blockTicks;
         }
     } while (ticksUsed > TICKS_PER_ROW);
-
+		
     for (i = 0; i < LATCHES_PER_ROW; i++) {
         // set period and OE values for current block - going from smallest timer values to largest
         // order needs to be smallest to largest so the last update of the row has the largest time between
@@ -256,13 +277,13 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
         uint16_t period = (msbBlockTicks >> (LATCHES_PER_ROW - i - 1)) + LATCH_TIMER_PULSE_WIDTH_TICKS;
         // on-time is the max on-time * dimming factor, plus the dead time while the latch is high
         uint16_t ontime = (((msbBlockTicks >> (LATCHES_PER_ROW - i - 1)) * dimmingFactor) / dimmingMaximum) + LATCH_TIMER_PULSE_WIDTH_TICKS;
-
+				
         if (period < MIN_BLOCK_PERIOD_TICKS) {
             uint16_t padding = (MIN_BLOCK_PERIOD_TICKS) - period;
             period += padding;
             ontime += padding;
         }
-
+        
         // add extra padding once per latch to match refreshRate exactly?  Doesn't seem to make a big difference
 #if 0        
         if(!i) {
@@ -273,6 +294,10 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
 #endif
         timerLUT[i].timer_period = period;
         timerLUT[i].timer_oe = ontime;
+		Serial.print("timer_period ");
+		Serial.println(period);
+		/*Serial.print("timer_oe ");
+		Serial.println(ontime);*/
     }
 }
 
@@ -288,11 +313,13 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
 
 template <int refreshDepth, int matrixWidth, int matrixHeight, unsigned char panelType, unsigned char optionFlags>
 void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::setRefreshRate(uint8_t newRefreshRate) {
-    if(newRefreshRate > MIN_REFRESH_RATE)
-        refreshRate = newRefreshRate;
-    else
-        refreshRate = MIN_REFRESH_RATE;
-    calculateTimerLUT();
+    if (newRefreshRate != refreshRate) {
+		if(newRefreshRate > MIN_REFRESH_RATE)
+			refreshRate = newRefreshRate;
+		else
+			refreshRate = MIN_REFRESH_RATE;
+		calculateTimerLUT();
+	}
 }
 
 template <int refreshDepth, int matrixWidth, int matrixHeight, unsigned char panelType, unsigned char optionFlags>
@@ -365,10 +392,12 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
 #endif
 
 #ifdef ADDX_UPDATE_ON_DATA_PINS
-    rowBitStructBytesToShift = sizeof(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[0].rowbits[0].data) + ADDX_UPDATE_BEFORE_LATCH_BYTES;
+    //rowBitStructBytesToShift = sizeof(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[0].rowbits[0].data) + ADDX_UPDATE_BEFORE_LATCH_BYTES;
+	rowBitStructBytesToShift = sizeof(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[0].rowbits[0]);
 #else
     rowBitStructBytesToShift = sizeof(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[0].rowbits[0].data);
 #endif
+
 
 #if defined(KINETISL)
     // setup FTM2 (Teensy LC)
@@ -463,7 +492,8 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
     SIM_SCGC6 |= SIM_SCGC6_DMAMUX;
 
     // enable minor loop mapping so addresses can get reset after minor loops
-    DMA_CR |= DMA_CR_EMLM;
+	// not needed WS
+    //DMA_CR |= DMA_CR_EMLM;
 
     // allocate all DMA channels up front so channels can link to each other
 #ifndef ADDX_UPDATE_ON_DATA_PINS
@@ -517,6 +547,7 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
     dmaUpdateAddress.TCD->CITER_ELINKNO = 1;
     dmaUpdateAddress.TCD->BITER_ELINKNO = 1;
     dmaUpdateAddress.TCD->CSR = 0;
+
 #endif
 
 #define DMA_TCD_MLOFF_MASK  (0x3FFFFC00)
@@ -541,19 +572,25 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
     dmaUpdateTimer.triggerAtHardwareEvent(DMAMUX_SOURCE_LATCH_FALLING_EDGE);
 
     // this is the number of bytes in the gap between each sequential rowBitStruct.data arrays
-    uint16_t rowBitStructDataOffset = sizeof(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[0].rowbits[0]) - rowBitStructBytesToShift;
-
+    //uint16_t rowBitStructDataOffset = sizeof(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[0].rowbits[0]) - rowBitStructBytesToShift;
+	
     // dmaClockOutData - repeatedly load gpio_array into GPIOD_PDOR, stop and int on major loop complete
-    dmaClockOutData.TCD->SADDR = matrixUpdateRows[0].rowbits[0].data;
+    //dmaClockOutData.TCD->SADDR = matrixUpdateRows[0].rowbits[0].data;
+	dmaClockOutData.TCD->SADDR = &(matrixUpdateRows[0].rowbits[0].timerValues.timer_oe);
     dmaClockOutData.TCD->SOFF = 1;
     // SADDR will get updated by ISR, no need to set SLAST
     dmaClockOutData.TCD->SLAST = 0;
     dmaClockOutData.TCD->ATTR = DMA_TCD_ATTR_SSIZE(0) | DMA_TCD_ATTR_DSIZE(0);
+	dmaClockOutData.TCD->NBYTES_MLNO = rowBitStructBytesToShift;
+/*	if (COLOR_DEPTH_BITS == 1) // 3-bit color  //WS
+	// more than 1024 pixels can be shifted out wit 1bit/color
+		dmaClockOutData.TCD->NBYTES_MLOFFNO = rowBitStructBytesToShift; 
+	else {
     // after each minor loop, apply no offset to source data, it's pointing to the next buffer already
     // clock out (PIXELS_PER_LATCH * DMA_UPDATES_PER_CLOCK + ADDX_UPDATE_BEFORE_LATCH_BYTES) number of bytes per loop
-    dmaClockOutData.TCD->NBYTES_MLOFFYES = DMA_TCD_NBYTES_SMLOE |
-                                ((rowBitStructDataOffset << 10) & DMA_TCD_MLOFF_MASK) |
-                                rowBitStructBytesToShift;
+	// Max 1024 pixels can be shifted out here!!!!
+		dmaClockOutData.TCD->NBYTES_MLOFFYES = DMA_TCD_NBYTES_SMLOE | ((rowBitStructDataOffset << 10) & DMA_TCD_MLOFF_MASK) | (rowBitStructBytesToShift & 0x3FF); 
+	}  */
     dmaClockOutData.TCD->DADDR = &GPIOD_PDOR;
     dmaClockOutData.TCD->DOFF = 0;
     dmaClockOutData.TCD->DLASTSGA = 0;
@@ -561,7 +598,7 @@ void SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, pan
     dmaClockOutData.TCD->BITER_ELINKNO = LATCHES_PER_ROW;
     // int after major loop is complete
     dmaClockOutData.TCD->CSR = DMA_TCD_CSR_INTMAJOR;
-    
+	    
     // for debugging - enable bandwidth control (space out GPIO updates so they can be seen easier on a low-bandwidth logic analyzer)
     // enable for now, until DMA sharing complications (brought to light by Teensy 3.6 SDIO) can be worked out - use bandwidth control to space out our DMA access and allow SD reads to not slow down shifting to the matrix
     // also enable for now, until it can be selectively enabled for higher clock speeds (140MHz+) where the data rate is too high for the panel
@@ -615,7 +652,6 @@ void rowBitShiftCompleteISR(void) {
         // done with previous row, mark it as read
         cbRead(&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::dmaBuffer);
     }
-
     if(currentLatchBit == 0) {
         // need new row, see if it is available yet
         if(cbIsEmpty(&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::dmaBuffer)) {
@@ -642,6 +678,7 @@ void rowBitShiftCompleteISR(void) {
             digitalWriteFast(DEBUG_PIN_1, LOW);
 #endif
             // return without setting up timers below
+			
             return;
 
         } else {
@@ -703,12 +740,12 @@ void rowShiftCompleteISR(void) {
 #endif
     // done with previous row, mark it as read
     cbRead(&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::dmaBuffer);
-
+    
     if(cbIsEmpty(&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::dmaBuffer)) {
 #ifdef DEBUG_PINS_ENABLED
         digitalWriteFast(DEBUG_PIN_1, LOW); // oscilloscope trigger
 #endif
-
+    
         // point dmaUpdateTimer to repeatedly load from values that set mod to MIN_BLOCK_PERIOD_TICKS and disable OE
         dmaUpdateTimer.TCD->SADDR = &SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::timerPairIdle;
         // set timer increment to repeat timerPairIdle
@@ -729,7 +766,8 @@ void rowShiftCompleteISR(void) {
         dmaUpdateAddress.TCD->SADDR = &(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[currentRow].rowbits[0].addressValues);
 #endif
         dmaUpdateTimer.TCD->SADDR = &(SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[currentRow].rowbits[0].timerValues.timer_oe);
-        dmaClockOutData.TCD->SADDR = (uint8_t*)&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[currentRow].rowbits[0].data;
+        //dmaClockOutData.TCD->SADDR = (uint8_t*)&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[currentRow].rowbits[0].data;
+		dmaClockOutData.TCD->SADDR = (uint8_t*)&SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::matrixUpdateRows[currentRow].rowbits[0].timerValues.timer_oe;
     }
 
     // trigger software interrupt to call rowCalculationISR() (DMA channel interrupt used instead of actual softint)

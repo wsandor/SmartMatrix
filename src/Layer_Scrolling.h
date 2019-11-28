@@ -28,7 +28,7 @@
 #include "MatrixCommon.h"
 
 // scroll text
-const int textLayerMaxStringLength = 100;
+const int textLayerMaxStringLength = 255;
 
 typedef enum ScrollMode {
     wrapForward,
@@ -58,6 +58,9 @@ class SMLayerScrolling : public SM_Layer {
 
         // size of bitmap is 1 bit per pixel for width*height (no need for double buffering)
         uint8_t * scrollingBitmap;
+		uint8_t * scrollingBackBitmap;
+		
+		bool drawBackColor;
 
         void stop(void);
         int getStatus(void) const;
@@ -65,11 +68,14 @@ class SMLayerScrolling : public SM_Layer {
         void update(const char inputtext[]);
         void setMode(ScrollMode mode);
         void setColor(const RGB & newColor);
+		void setBackColor(const RGB & newColor);
         void setSpeed(unsigned char pixels_per_second);
         void setFont(fontChoices newFont);
+		void setBitmapFont(const bitmap_font newFont);
         void setOffsetFromTop(int offset);
         void setStartOffsetFromLeft(int offset);
         void enableColorCorrection(bool enabled);
+		void setWindow(int x, int y, int w, int h);
 
     private:
         void redrawScrollingText(void);
@@ -82,8 +88,13 @@ class SMLayerScrolling : public SM_Layer {
         template <typename RGB_OUT>
         bool getPixel(uint16_t hardwareX, uint16_t hardwareY, RGB_OUT &xyPixel);
         bool getPixel(uint16_t hardwareX, uint16_t hardwareY);
+		
+		template <typename RGB_OUT>
+        bool getBackPixel(uint16_t hardwareX, uint16_t hardwareY, RGB_OUT &xyPixel);
+        bool getBackPixel(uint16_t hardwareX, uint16_t hardwareY);
 
         RGB textcolor;
+		RGB backcolor;
         unsigned char currentframe = 0;
         char text[textLayerMaxStringLength];
         unsigned char pixelsPerSecond = 30;
@@ -104,6 +115,10 @@ class SMLayerScrolling : public SM_Layer {
         unsigned int textWidth;
         int scrollMin, scrollMax;
         int scrollPosition;
+		
+		int xStart = 0;
+		int yStart = 0;
+		int xEnd, yEnd;
 };
 
 #include "Layer_Scrolling_Impl.h"

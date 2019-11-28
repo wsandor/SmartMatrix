@@ -52,7 +52,7 @@ public:
     // functions called by ISR
     static void matrixCalculations(bool initial);
     static void dmaBufferUnderrunCallback(void);
-
+	
 private:
     static SM_Layer * baseLayer;
 

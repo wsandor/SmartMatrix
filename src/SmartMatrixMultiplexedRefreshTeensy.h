@@ -46,9 +46,10 @@ public:
 #endif
 
     struct rowBitStruct {
-        uint8_t data[PIXELS_PER_LATCH * DMA_UPDATES_PER_CLOCK];
+		timerpair timerValues; //WS
+		uint8_t dummy;
+		uint8_t data[PIXELS_PER_LATCH * DMA_UPDATES_PER_CLOCK];
         uint8_t rowAddress; // must be directly after data - DMA transfers data[] + rowAddress continuous
-        timerpair timerValues;
 #ifndef ADDX_UPDATE_ON_DATA_PINS
         addresspair addressValues;
 #endif

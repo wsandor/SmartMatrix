@@ -50,34 +50,66 @@ int getBitmapFontLocation(unsigned char letter, const bitmap_font *font) {
     return -1;
 }
 
+int getBitmapFontCharWidth(unsigned char letter, const bitmap_font *font) {
+	
+	if (!font->Widths)
+    	return font->Width;
+    int location = getBitmapFontLocation(letter, font);
+	
+	if (location >= 0) 
+		return font->Widths[location]; 
+    return 0;
+
+    /*
+	int location;
+	location = getBitmapFontLocation(letter, font);
+	
+	if (strlen((char *)font->Widths)) {
+		return font->Widths[location];
+	} else {
+		return font->Width;
+	} */
+}
+
 bool getBitmapFontPixelAtXY(unsigned char letter, unsigned char x, unsigned char y, const bitmap_font *font)
 {
     int location;
+	int widthInBytes;
+		
     if (y >= font->Height)
         return false;
 
     location = getBitmapFontLocation(letter, font);
-
+    widthInBytes = (font->Width + 7) / 8;
+	
     if (location < 0)
         return false;
 
-    if (font->Bitmap[(location * font->Height) + y] & (0x80 >> x))
-        return true;
-    else
-        return false;
+    if (font->Bitmap[(location * font->Height * widthInBytes) + (y * widthInBytes) + (x >> 3)] & (0x80 >> (x % 8)))
+		return true;
+	else
+		return false;
 }
 
-uint16_t getBitmapFontRowAtXY(unsigned char letter, unsigned char y, const bitmap_font *font) {
+uint8_t getBitmapFontRowAtXY(unsigned char letter, unsigned char x, unsigned char y, const bitmap_font *font) {
     int location;
+	int widthInBytes;
+	uint16_t rowValue;
+	
     if (y >= font->Height)
-        return 0x0000;
+        return 0x00;
 
     location = getBitmapFontLocation(letter, font);
-
+ 
     if (location < 0)
-        return 0x0000;
-
-    return(font->Bitmap[(location * font->Height) + y]);
+        return 0x00;
+	
+	widthInBytes = (font->Width + 7) / 8;
+    
+	rowValue = font->Bitmap[(location * font->Height * widthInBytes) + (y * widthInBytes) + (x >> 3)];
+	/*if (widthInBytes > 1) 
+		rowValue |= font->Bitmap[(location * font->Height * widthInBytes) + (y * widthInBytes) + 1];*/
+	return(rowValue);
 }
 
 // order needs to match fontChoices enum
@@ -88,6 +120,7 @@ static const bitmap_font *fontArray[] = {
     &apple8x13,
     &gohufont6x11,
     &gohufont6x11b,
+	&vs12x16
 };
 
 const bitmap_font *fontLookup(fontChoices font) {

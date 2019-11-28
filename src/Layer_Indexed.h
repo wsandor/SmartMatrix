@@ -50,8 +50,9 @@ class SMLayerIndexed : public SM_Layer {
         void swapBuffers(bool copy = true);
         void drawPixel(int16_t x, int16_t y, uint8_t index);
         void setFont(fontChoices newFont);
+		void setBitmapFont(const bitmap_font newFont);
         // todo: handle index (draw transparent)
-        void drawChar(int16_t x, int16_t y, uint8_t index, char character);
+        int16_t drawChar(int16_t x, int16_t y, uint8_t index, char character);
         void drawString(int16_t x, int16_t y, uint8_t index, const char text []);
         void drawMonoBitmap(int16_t x, int16_t y, uint8_t width, uint8_t height, uint8_t index, uint8_t *bitmap);
 

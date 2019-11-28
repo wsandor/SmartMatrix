@@ -20,7 +20,7 @@
  * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-
+ 
 #include "SmartMatrix3.h"
 
 #define INLINE __attribute__( ( always_inline ) ) inline
@@ -90,6 +90,7 @@ void SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlag
   }
 }
 
+
 #define MAX_MATRIXCALCULATIONS_LOOPS_WITHOUT_EXIT  5
 
 template <int refreshDepth, int matrixWidth, int matrixHeight, unsigned char panelType, unsigned char optionFlags>
@@ -155,15 +156,17 @@ void SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlag
         if (++currentRow >= MATRIX_SCAN_MOD)
             currentRow = 0;
 
-        if(dmaBufferUnderrun) {
+		if(dmaBufferUnderrun) {
             // if refreshrate is too high, lower - minimum set to avoid overflowing timer at low refresh rates
             if(calc_refreshRate > MIN_REFRESH_RATE) {
-                calc_refreshRate--;
+				calc_refreshRate--;
                 SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::setRefreshRate(calc_refreshRate);
                 refreshRateLowered = true;
                 refreshRateChanged = true;
             }
-
+			else {
+				Serial.println("Can't dec refreshrate");
+			}
             SmartMatrix3RefreshMultiplexed<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::recoverFromDmaUnderrun();
             dmaBufferUnderrunSinceLastCheck = true;
             dmaBufferUnderrun = false;
@@ -348,7 +351,7 @@ INLINE void SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, opt
     int i;
     int multiRowRefreshRowOffset = 0;
     const int numPixelsPerTempRow = PIXELS_PER_LATCH/PHYSICAL_ROWS_PER_REFRESH_ROW;
-
+    
     // static to avoid putting large buffer on the stack
     static rgb48 tempRow0[numPixelsPerTempRow];
     static rgb48 tempRow1[numPixelsPerTempRow];
@@ -419,6 +422,8 @@ INLINE void SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, opt
                 maskoffset = 4;
             else if (COLOR_DEPTH_BITS == 16) // 48-bit color
                 maskoffset = 0;
+			else if (COLOR_DEPTH_BITS <= 8) // <= 8-bit color  //WS
+                maskoffset = 8 - COLOR_DEPTH_BITS;
 
             uint16_t mask = (1 << (j + maskoffset));
             
@@ -518,16 +523,35 @@ INLINE void SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, opt
     // static to avoid putting large buffer on the stack
     static rgb24 tempRow0[numPixelsPerTempRow];
     static rgb24 tempRow1[numPixelsPerTempRow];
+	
+	static rowDataStruct storedRows[4];
 
     int c = 0;
     resetMultiRowRefreshMapPosition();
+	
+	/*bool changed = false;
+	SM_Layer * templayer = SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::baseLayer;
+    while(templayer) {
+		changed|= templayer->changed;
+		templayer = templayer->nextLayer;        
+    }*/
+	
+	if (!(changed &~((1 << MATRIX_SCAN_MOD) - 1))) { 
+		//memcpy(currentRowDataPtr->rowbits[0].timerValues.timer_oe, storedRows[currentRow].rowbits[0].timerValues.timer_oe, sizeof(storedRows[currentRow]));
+		currentRowDataPtr = &storedRows[currentRow];	
+		//Serial.println("c");
+	}
+	else {
+		//Serial.println("r");
 
     // go through this process for each physical row that is contained in the refresh row
     do {
         // clear buffer to prevent garbage data showing through transparent layers
         memset(tempRow0, 0x00, sizeof(tempRow0));
         memset(tempRow1, 0x00, sizeof(tempRow1));
-
+		
+		
+		
         // get pixel data from layers
         SM_Layer * templayer = SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, optionFlags>::baseLayer;
         while(templayer) {
@@ -585,8 +609,8 @@ INLINE void SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, opt
                 maskoffset = 4;
             else if (COLOR_DEPTH_BITS == 16) // 48-bit color
                 maskoffset = 0;
-            else if (COLOR_DEPTH_BITS == 8)  // 24-bit color
-                maskoffset = 0;
+            else if (COLOR_DEPTH_BITS <= 8) // <= 8-bit color  //WS
+                maskoffset = 8 - COLOR_DEPTH_BITS;
 
             uint16_t mask = (1 << (j + maskoffset));
             
@@ -594,7 +618,7 @@ INLINE void SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, opt
 
             // reset pixel map offset so we start filling from the first panel again
             resetMultiRowRefreshMapPositionPixelGroupToStartOfRow();
-
+			
             while(i < numPixelsPerTempRow) {
                 // get number of pixels to go through with current pass
                 int numPixelsToMap = getMultiRowRefreshNumPixelsToMap();
@@ -674,7 +698,10 @@ INLINE void SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, opt
 
         advanceMultiRowRefreshMapToNextRow();
         multiRowRefreshRowOffset = getMultiRowRefreshRowOffset();
-    } while (multiRowRefreshRowOffset > 0);    
+    } while (multiRowRefreshRowOffset > 0); 
+    storedRows[currentRow] = *currentRowDataPtr;
+	changed&= ~(1 << currentRow);
+	}	
 }
 
 template <int refreshDepth, int matrixWidth, int matrixHeight, unsigned char panelType, unsigned char optionFlags>
@@ -686,6 +713,7 @@ INLINE void SmartMatrix3<refreshDepth, matrixWidth, matrixHeight, panelType, opt
         loadMatrixBuffers48(currentRowDataPtr, currentRow);
     else if(LATCHES_PER_ROW == 12)
         loadMatrixBuffers48(currentRowDataPtr, currentRow);
-    else if(LATCHES_PER_ROW == 8)
+    else if(LATCHES_PER_ROW <= 8) {
         loadMatrixBuffers24(currentRowDataPtr, currentRow);
+	}
 }

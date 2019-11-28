@@ -63,6 +63,7 @@ void SMLayerBackground<RGB, optionFlags>::begin(void) {
 
     currentDrawBufferPtr = backgroundBuffers[0];
     currentRefreshBufferPtr = backgroundBuffers[1];
+	changed = 0xFFFFFFFF;
 }
 
 template <typename RGB, unsigned int optionFlags>
@@ -819,7 +820,7 @@ void SMLayerBackground<RGB, optionFlags>::drawChar(int16_t x, int16_t y, const R
     int xcnt, ycnt;
 
     for (ycnt = 0; ycnt < font->Height; ycnt++) {
-        for (xcnt = 0; xcnt < font->Width; xcnt++) {
+        for (xcnt = 0; xcnt < getBitmapFontCharWidth(character, font); xcnt++) {
             if (getBitmapFontPixelAtXY(character, xcnt, ycnt, font)) {
                 drawPixel(x + xcnt, y + ycnt, charColor);
             }
@@ -829,30 +830,34 @@ void SMLayerBackground<RGB, optionFlags>::drawChar(int16_t x, int16_t y, const R
 
 template <typename RGB, unsigned int optionFlags>
 void SMLayerBackground<RGB, optionFlags>::drawString(int16_t x, int16_t y, const RGB& charColor, const char text[]) {
-    int xcnt, ycnt, i = 0, offset = 0;
+    int xcnt, ycnt, offset = 0;
     char character;
-
+    int charWidth;
+	
     while ((character = text[offset++]) != '\0') {
-        for (ycnt = 0; ycnt < font->Height; ycnt++) {
-            for (xcnt = 0; xcnt < font->Width; xcnt++) {
+        charWidth = getBitmapFontCharWidth(character, font);
+		for (ycnt = 0; ycnt < font->Height; ycnt++) {
+            for (xcnt = 0; xcnt < charWidth; xcnt++) {
                 if (getBitmapFontPixelAtXY(character, xcnt, ycnt, font)) {
                     drawPixel(x + xcnt, y + ycnt, charColor);
                 }
             }
         }
-        x += font->Width;
+        x += charWidth; //font->Width;
     }
 }
 
 // draw string while clearing background
 template <typename RGB, unsigned int optionFlags>
 void SMLayerBackground<RGB, optionFlags>::drawString(int16_t x, int16_t y, const RGB& charColor, const RGB& backColor, const char text[]) {
-    int xcnt, ycnt, i = 0, offset = 0;
+    int xcnt, ycnt, offset = 0;
     char character;
-
+    int charWidth;
+	
     while ((character = text[offset++]) != '\0') {
-        for (ycnt = 0; ycnt < font->Height; ycnt++) {
-            for (xcnt = 0; xcnt < font->Width; xcnt++) {
+        charWidth = getBitmapFontCharWidth(character, font);
+		for (ycnt = 0; ycnt < font->Height; ycnt++) {
+            for (xcnt = 0; xcnt < charWidth; xcnt++) {
                 if (getBitmapFontPixelAtXY(character, xcnt, ycnt, font)) {
                     drawPixel(x + xcnt, y + ycnt, charColor);
                 } else {
@@ -860,7 +865,7 @@ void SMLayerBackground<RGB, optionFlags>::drawString(int16_t x, int16_t y, const
                 }
             }
         }
-        x += font->Width;
+        x += charWidth; //font->Width;
     }
 }
 
@@ -897,6 +902,7 @@ void SMLayerBackground<RGB, optionFlags>::handleBufferSwap(void) {
     currentDrawBufferPtr = backgroundBuffers[currentDrawBuffer];
 
     swapPending = false;
+	changed = 0xFFFFFFFF;
 }
 
 // waits until previous swap is complete
@@ -927,6 +933,7 @@ void SMLayerBackground<RGB, optionFlags>::swapBuffers(bool copy) {
         //   memcpy(backgroundBuffers[currentDrawBuffer], backgroundBuffers[currentRefreshBuffer], sizeof(RGB) * (this->matrixWidth * this->matrixHeight));
 #endif
     }
+	changed = 0xFFFFFFFF;
 }
 
 template <typename RGB, unsigned int optionFlags>

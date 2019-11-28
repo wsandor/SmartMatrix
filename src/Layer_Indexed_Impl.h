@@ -36,6 +36,7 @@ SMLayerIndexed<RGB, optionFlags>::SMLayerIndexed(uint8_t * bitmap, uint16_t widt
     this->matrixWidth = width;
     this->matrixHeight = height;
     this->color = rgb48(0xffff, 0xffff, 0xffff);
+	changed = 0xFFFFFFFF;
 }
 
 template <typename RGB, unsigned int optionFlags>
@@ -51,6 +52,7 @@ SMLayerIndexed<RGB, optionFlags>::SMLayerIndexed(uint16_t width, uint16_t height
     this->matrixWidth = width;
     this->matrixHeight = height;
     this->color = rgb48(0xffff, 0xffff, 0xffff);
+	changed = 0xFFFFFFFF;
 }
 
 template <typename RGB, unsigned int optionFlags>
@@ -174,6 +176,7 @@ void SMLayerIndexed<RGB, optionFlags>::swapBuffers(bool copy) {
     copyPending = true;
 
     while (copy && copyPending);
+	changed = 0xFFFFFFFF;
 }
 
 template <typename RGB, unsigned int optionFlags>
@@ -183,6 +186,7 @@ void SMLayerIndexed<RGB, optionFlags>::handleBufferCopy(void) {
 
     memcpy(&indexedBitmap[indexedRefreshBuffer*INDEXED_BUFFER_SIZE], &indexedBitmap[indexedDrawBuffer*INDEXED_BUFFER_SIZE], INDEXED_BUFFER_SIZE);
     copyPending = false;
+	changed = 0xFFFFFFFF;
 }
 
 template <typename RGB, unsigned int optionFlags>
@@ -208,41 +212,93 @@ void SMLayerIndexed<RGB, optionFlags>::setFont(fontChoices newFont) {
 }
 
 template <typename RGB, unsigned int optionFlags>
-void SMLayerIndexed<RGB, optionFlags>::drawChar(int16_t x, int16_t y, uint8_t index, char character) {
-    uint8_t tempBitmask;
-    int k;
+void SMLayerIndexed<RGB, optionFlags>::setBitmapFont(const bitmap_font newFont) {
+  layerFont = (bitmap_font *)&newFont;
+  majorScrollFontChange = true;
+}
 
+template <typename RGB, unsigned int optionFlags>
+int16_t SMLayerIndexed<RGB, optionFlags>::drawChar(int16_t x, int16_t y, uint8_t index, char character) {
+    uint8_t tempBitmask;
+	uint16_t idxBitmap;
+    int k, charWidth;;
+    
+	charWidth = getBitmapFontCharWidth(character, scrollFont);
     // only draw if character is on the screen
-    if (x + scrollFont->Width < 0 || x >= this->localWidth) {
-        return;
+    if (x + charWidth < 0 || x >= this->localWidth) {
+        return (x);
     }
 
     for (k = y; k < y+layerFont->Height; k++) {
         // ignore rows that are not on the screen
-        if(k < 0) continue;
-        if (k >= this->localHeight) return;
+		if(k < 0) 
+			continue;
+        if (k >= this->localHeight) 
+			return(x);
 
-        tempBitmask = getBitmapFontRowAtXY(character, k - y, layerFont);
-        if (x < 0) {
-            indexedBitmap[indexedDrawBuffer*INDEXED_BUFFER_SIZE + (k * INDEXED_BUFFER_ROW_SIZE) + 0] |= tempBitmask << -x;
-        } else {
-            indexedBitmap[indexedDrawBuffer*INDEXED_BUFFER_SIZE + (k * INDEXED_BUFFER_ROW_SIZE) + (x/8)] |= tempBitmask >> (x%8);
-            // do two writes if the shifted 8-bit wide bitmask is still on the screen
-            if(x + 8 < this->localWidth && x % 8)
-                indexedBitmap[indexedDrawBuffer*INDEXED_BUFFER_SIZE + (k * INDEXED_BUFFER_ROW_SIZE) + (x/8) + 1] |= tempBitmask << (8-(x%8));
+        uint8_t xChar;			
+		for (xChar = 0; xChar < charWidth; xChar+=8) {
+			if ((x + xChar > -8) && (x + xChar < this->localWidth)) {
+				tempBitmask = getBitmapFontRowAtXY(character, xChar, k - y, layerFont);
+				idxBitmap = indexedDrawBuffer*INDEXED_BUFFER_SIZE + (k * INDEXED_BUFFER_ROW_SIZE);
+				if (x + xChar < 0) {
+					indexedBitmap[idxBitmap] |= tempBitmask << -(x + xChar);
+				} else {
+					indexedBitmap[idxBitmap + ((x + xChar)/8)] |= tempBitmask >> ((x + xChar)%8);
+					// do two writes if the shifted 8-bit wide bitmask is still on the screen
+					if (x + xChar + 8 < this->localWidth && x % 8)
+					indexedBitmap[idxBitmap + ((x + xChar)/8) + 1] |= tempBitmask << (8-((x + xChar)%8));
+				}	
+			}								
         }
+		
+		/*
+		
+		tempBitmask = getBitmapFontRowAtXY(character, 0, k - y, layerFont);   //tbd
+        idxBitmap = indexedDrawBuffer*INDEXED_BUFFER_SIZE + (k * INDEXED_BUFFER_ROW_SIZE);
+		if (x < 0) {
+			tempBitmask = tempBitmask << (-x);
+			tempBitmaskL = tempBitmask & 0xFF;
+			tempBitmaskH = tempBitmask >> 8;
+			indexedBitmap[idxBitmap + 0] |= tempBitmaskH;
+			if (tempBitmaskL)
+				indexedBitmap[idxBitmap + 1] |= tempBitmaskL;		
+        } else {
+			tempBitmaskL = tempBitmask & 0xFF;
+			tempBitmaskH = tempBitmask >> 8;
+            indexedBitmap[idxBitmap + (x/8)] |= tempBitmaskH >> (x%8);
+            // do two writes if the shifted 8-bit wide bitmask is still on the screen
+            if (x + 8 < this->localWidth) {
+				if (x % 8)
+                    indexedBitmap[idxBitmap + (x/8) + 1] |= tempBitmaskH << (8-(x%8));
+					if (tempBitmaskL) {
+						indexedBitmap[idxBitmap + (x/8) + 1] |= tempBitmaskL >> (x%8);
+						if (x + 16 < this->localWidth && x % 8) {
+							indexedBitmap[idxBitmap + (x/8) + 2] |= tempBitmaskL << (8-(x%8));
+						}
+					}
+				}
+        }     */
+
+        //tempBitmask = getBitmapFontRowAtXY(character, k - y, layerFont);
+        //if (x < 0) {
+        //    indexedBitmap[indexedDrawBuffer*INDEXED_BUFFER_SIZE + (k * INDEXED_BUFFER_ROW_SIZE) + 0] |= tempBitmask << -x;
+        //} else {
+        //    indexedBitmap[indexedDrawBuffer*INDEXED_BUFFER_SIZE + (k * INDEXED_BUFFER_ROW_SIZE) + (x/8)] |= tempBitmask >> (x%8);
+            // do two writes if the shifted 8-bit wide bitmask is still on the screen
+        //    if(x + 8 < this->localWidth && x % 8)
+        //        indexedBitmap[indexedDrawBuffer*INDEXED_BUFFER_SIZE + (k * INDEXED_BUFFER_ROW_SIZE) + (x/8) + 1] |= tempBitmask << (8-(x%8));
+        //}
     }
+	x+= charWidth;
+	return(x);
 }
 
 template <typename RGB, unsigned int optionFlags>
 void SMLayerIndexed<RGB, optionFlags>::drawString(int16_t x, int16_t y, uint8_t index, const char text []) {
-    // limit text to 10 chars, why?
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; text[i] != '\0'; i++) {
         char character = text[i];
-        if (character == '\0')
-            return;
-
-        drawChar(i * layerFont->Width + x, y, index, character);
+        x = drawChar(x, y, index, character);
     }
 }
 
